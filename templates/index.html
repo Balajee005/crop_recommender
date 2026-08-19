@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CropSense — AI Crop Advisor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet" />
+  <style>
+    /* ═══════════════════════════════════════════════
+       TOKENS & THEME
+    ═══════════════════════════════════════════════ */
+    :root {
+      --soil:       #2C1810;
+      --bark:       #5C3317;
+      --moss:       #2D5016;
+      --leaf:       #4A7C2F;
+      --sage:       #7BA05B;
+      --mint:       #A8C97F;
+      --cream:      #F5EFE0;
+      --parchment:  #EDE3C8;
+      --gold:       #C9A84C;
+      --amber:      #E8A930;
+      --sand:       #D4B483;
+      --rust:       #A0522D;
+
+      --text-dark:  #1A0F08;
+      --text-med:   #4A3728;
+      --text-light: #7A6555;
+
+      --card-bg:    rgba(245, 239, 224, 0.92);
+      --glass:      rgba(255,255,255,0.08);
+
+      --radius-lg:  1.5rem;
+      --radius-md:  0.9rem;
+      --radius-sm:  0.4rem;
+      --shadow-lg:  0 20px 60px rgba(44,24,16,0.25);
+      --shadow-md:  0 8px 24px rgba(44,24,16,0.15);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--soil);
+      color: var(--text-dark);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ═══════════════════════════════════════════════
+       ANIMATED BACKGROUND
+    ═══════════════════════════════════════════════ */
+    .bg-canvas {
+      position: fixed; inset: 0; z-index: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 15% 20%, rgba(74,124,47,0.18) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 80% at 85% 70%, rgba(201,168,76,0.12) 0%, transparent 60%),
+        linear-gradient(160deg, #2C1810 0%, #1A0F08 40%, #0D1A05 100%);
+    }
+
+    .bg-canvas::before {
+      content: "";
+      position: absolute; inset: 0;
+      background-image:
+        url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%234A7C2F' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      opacity: 0.5;
+    }
+
+    /* Floating leaf particles */
+    .particle {
+      position: fixed; pointer-events: none; z-index: 1;
+      font-size: 1.2rem; opacity: 0;
+      animation: float-up var(--dur, 12s) var(--delay, 0s) infinite ease-in-out;
+    }
+
+    @keyframes float-up {
+      0%   { transform: translateY(110vh) translateX(0) rotate(0deg); opacity: 0; }
+      10%  { opacity: 0.15; }
+      90%  { opacity: 0.08; }
+      100% { transform: translateY(-10vh) translateX(var(--drift, 30px)) rotate(360deg); opacity: 0; }
+    }
+
+    /* ═══════════════════════════════════════════════
+       LAYOUT
+    ═══════════════════════════════════════════════ */
+    .page {
+      position: relative; z-index: 2;
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    /* ── Header ─────────────────────────────────── */
+    header {
+      padding: 2rem 3rem;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid rgba(201,168,76,0.15);
+      animation: slide-down 0.7s ease both;
+    }
+
+    @keyframes slide-down {
+      from { opacity: 0; transform: translateY(-20px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 0.75rem;
+    }
+    .logo-icon {
+      width: 2.8rem; height: 2.8rem;
+      background: linear-gradient(135deg, var(--leaf), var(--amber));
+      border-radius: 50%;
+      display: grid; place-items: center;
+      font-size: 1.3rem;
+      box-shadow: 0 0 20px rgba(201,168,76,0.4);
+    }
+    .logo-text {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.6rem; font-weight: 900;
+      color: var(--cream);
+      letter-spacing: -0.02em;
+    }
+    .logo-text span { color: var(--amber); }
+
+    .header-badge {
+      background: rgba(201,168,76,0.15);
+      border: 1px solid rgba(201,168,76,0.3);
+      color: var(--amber);
+      padding: 0.35rem 1rem;
+      border-radius: 100px;
+      font-size: 0.75rem; font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* ── Main grid ──────────────────────────────── */
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2.5rem;
+      padding: 3rem;
+      max-width: 1280px;
+      margin: 0 auto;
+      width: 100%;
+      animation: fade-in 0.8s 0.2s ease both;
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    /* ── Card base ──────────────────────────────── */
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(201,168,76,0.2);
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+    }
+
+    /* ═══════════════════════════════════════════════
+       LEFT — INPUT PANEL
+    ═══════════════════════════════════════════════ */
+    .input-card { padding: 2.5rem; }
+
+    .card-eyebrow {
+      font-size: 0.7rem; font-weight: 500;
+      text-transform: uppercase; letter-spacing: 0.15em;
+      color: var(--sage);
+      margin-bottom: 0.4rem;
+    }
+    .card-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.75rem; font-weight: 700;
+      color: var(--soil);
+      line-height: 1.2;
+      margin-bottom: 0.6rem;
+    }
+    .card-desc {
+      font-size: 0.85rem; color: var(--text-light);
+      line-height: 1.6; margin-bottom: 2rem;
+    }
+
+    /* Soil nutrient group */
+    .field-group {
+      margin-bottom: 1.5rem;
+    }
+    .field-group-label {
+      font-size: 0.7rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.12em;
+      color: var(--bark);
+      margin-bottom: 0.75rem;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .field-group-label::after {
+      content: ""; flex: 1;
+      height: 1px; background: rgba(92,51,23,0.2);
+    }
+
+    .fields-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; }
+    .fields-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+
+    .field {
+      display: flex; flex-direction: column; gap: 0.3rem;
+    }
+    .field label {
+      font-size: 0.72rem; font-weight: 500;
+      color: var(--text-med);
+      display: flex; justify-content: space-between;
+    }
+    .field label .unit {
+      color: var(--text-light); font-style: italic; font-weight: 300;
+    }
+
+    .field input {
+      width: 100%;
+      padding: 0.6rem 0.85rem;
+      background: rgba(255,255,255,0.7);
+      border: 1.5px solid rgba(92,51,23,0.18);
+      border-radius: var(--radius-sm);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.88rem;
+      color: var(--text-dark);
+      transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none;
+      appearance: textfield;
+      -moz-appearance: textfield;
+    }
+    .field input::-webkit-inner-spin-button,
+    .field input::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+    .field input:focus {
+      border-color: var(--leaf);
+      box-shadow: 0 0 0 3px rgba(74,124,47,0.12);
+      background: #fff;
+    }
+    .field input.error { border-color: #c0392b; }
+
+    /* Submit button */
+    .btn-predict {
+      width: 100%; margin-top: 1.5rem;
+      padding: 0.95rem;
+      background: linear-gradient(135deg, var(--moss), var(--leaf));
+      border: none; border-radius: var(--radius-md);
+      color: var(--cream);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.95rem; font-weight: 500;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+      transition: transform 0.15s, box-shadow 0.2s, filter 0.2s;
+      box-shadow: 0 4px 18px rgba(45,80,22,0.4);
+    }
+    .btn-predict:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(45,80,22,0.5);
+      filter: brightness(1.07);
+    }
+    .btn-predict:active:not(:disabled) { transform: translateY(0); }
+    .btn-predict:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Spinner */
+    .spinner {
+      width: 1rem; height: 1rem;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ═══════════════════════════════════════════════
+       RIGHT — RESULT PANEL
+    ═══════════════════════════════════════════════ */
+    .result-card {
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Hero result area */
+    .result-hero {
+      flex: 1;
+      background: linear-gradient(160deg, var(--moss) 0%, #0D1A05 100%);
+      padding: 3rem 2.5rem;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      text-align: center;
+      position: relative;
+      min-height: 280px;
+      transition: all 0.4s ease;
+    }
+
+    .result-hero::before {
+      content: "";
+      position: absolute; inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M50 50c0-5.523 4.477-10 10-10s10 4.477 10 10-4.477 10-10 10c0 5.523-4.477 10-10 10s-10-4.477-10-10 4.477-10 10-10zM10 10c0-5.523 4.477-10 10-10s10 4.477 10 10-4.477 10-10 10c0 5.523-4.477 10-10 10S0 25.523 0 20s4.477-10 10-10z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    }
+
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center; gap: 1rem;
+    }
+    .empty-icon {
+      font-size: 3.5rem; opacity: 0.4;
+      animation: pulse 3s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.4; }
+      50%       { transform: scale(1.05); opacity: 0.55; }
+    }
+
+    .empty-text {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1rem; color: rgba(245,239,224,0.4);
+      font-style: italic;
+    }
+
+    /* The actual result */
+    .result-content { display: none; text-align: center; position: relative; z-index: 1; }
+
+    .result-emoji {
+      font-size: 4.5rem; line-height: 1;
+      animation: pop-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+      filter: drop-shadow(0 4px 16px rgba(0,0,0,0.4));
+    }
+    @keyframes pop-in {
+      from { transform: scale(0.3) rotate(-15deg); opacity: 0; }
+      to   { transform: scale(1) rotate(0deg); opacity: 1; }
+    }
+
+    .result-crop {
+      font-family: 'Playfair Display', serif;
+      font-size: 2.2rem; font-weight: 900;
+      color: var(--cream);
+      text-transform: capitalize;
+      margin: 0.5rem 0 0.25rem;
+      letter-spacing: -0.02em;
+      animation: slide-up 0.4s 0.15s ease both;
+    }
+
+    .result-label {
+      font-size: 0.75rem; font-weight: 500;
+      text-transform: uppercase; letter-spacing: 0.15em;
+      color: var(--mint);
+      margin-bottom: 1.5rem;
+      animation: slide-up 0.4s 0.2s ease both;
+    }
+
+    @keyframes slide-up {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: none; }
+    }
+
+    /* Confidence ring */
+    .confidence-wrap {
+      display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+      animation: slide-up 0.4s 0.3s ease both;
+    }
+
+    .ring-svg { width: 80px; height: 80px; }
+    .ring-bg   { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 5; }
+    .ring-fill {
+      fill: none; stroke: var(--amber); stroke-width: 5;
+      stroke-linecap: round;
+      stroke-dasharray: 220;
+      stroke-dashoffset: 220;
+      transform-origin: center;
+      transform: rotate(-90deg);
+      transition: stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1) 0.4s;
+    }
+    .ring-text {
+      font-family: 'Playfair Display', serif;
+      font-size: 0.85rem; font-weight: 700;
+      fill: var(--cream);
+      dominant-baseline: middle;
+      text-anchor: middle;
+    }
+
+    .confidence-label {
+      text-align: left;
+    }
+    .confidence-label .pct {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.8rem; font-weight: 700; color: var(--amber);
+    }
+    .confidence-label .lbl {
+      font-size: 0.75rem; color: rgba(245,239,224,0.5);
+      text-transform: uppercase; letter-spacing: 0.1em;
+    }
+
+    /* ── Top 3 strip ──────────────────────────────── */
+    .top3-strip {
+      padding: 1.25rem 1.5rem;
+      background: var(--parchment);
+      border-top: 1px solid rgba(201,168,76,0.2);
+    }
+
+    .top3-title {
+      font-size: 0.65rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.15em;
+      color: var(--text-light); margin-bottom: 0.75rem;
+    }
+
+    .top3-list { display: flex; flex-direction: column; gap: 0.4rem; }
+
+    .top3-item {
+      display: grid;
+      grid-template-columns: 1.5rem 1fr auto;
+      align-items: center; gap: 0.6rem;
+    }
+    .top3-rank { font-size: 0.75rem; color: var(--text-light); font-weight: 500; }
+    .top3-bar-wrap {
+      position: relative; height: 6px;
+      background: rgba(92,51,23,0.12);
+      border-radius: 100px; overflow: hidden;
+    }
+    .top3-bar {
+      position: absolute; left: 0; top: 0; height: 100%;
+      border-radius: 100px;
+      transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.5s;
+      width: 0;
+    }
+    .top3-bar.rank-1 { background: linear-gradient(90deg, var(--leaf), var(--amber)); }
+    .top3-bar.rank-2 { background: var(--sage); }
+    .top3-bar.rank-3 { background: var(--sand); }
+
+    .top3-name { font-size: 0.78rem; color: var(--text-med); text-transform: capitalize; }
+    .top3-pct  { font-size: 0.75rem; color: var(--text-light); font-weight: 500; min-width: 3rem; text-align: right; }
+
+    /* ── Error banner ─────────────────────────────── */
+    .error-banner {
+      display: none;
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      background: #fdf2f2;
+      border: 1px solid #f5c6c6;
+      border-radius: var(--radius-sm);
+      color: #c0392b;
+      font-size: 0.82rem; line-height: 1.5;
+    }
+
+    /* ── Footer ──────────────────────────────────── */
+    footer {
+      padding: 1.25rem 3rem;
+      text-align: center;
+      border-top: 1px solid rgba(201,168,76,0.1);
+      color: rgba(245,239,224,0.25);
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+    }
+    footer span { color: var(--amber); opacity: 0.5; }
+
+    /* ═══════════════════════════════════════════════
+       RESPONSIVE
+    ═══════════════════════════════════════════════ */
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; padding: 1.5rem; }
+      header { padding: 1.5rem; }
+      .fields-row { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Floating particles -->
+<div class="bg-canvas"></div>
+<div class="particle" style="left:8%;--dur:14s;--delay:0s;--drift:40px">🌿</div>
+<div class="particle" style="left:23%;--dur:18s;--delay:3s;--drift:-30px">🍃</div>
+<div class="particle" style="left:55%;--dur:11s;--delay:6s;--drift:20px">🌱</div>
+<div class="particle" style="left:78%;--dur:16s;--delay:1s;--drift:-50px">🌿</div>
+<div class="particle" style="left:92%;--dur:13s;--delay:9s;--drift:35px">🍃</div>
+
+<div class="page">
+  <!-- ── HEADER ───────────────────────────────────── -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🌾</div>
+      <div class="logo-text">Crop<span>Sense</span></div>
+    </div>
+
+  </header>
+
+  <!-- ── MAIN ─────────────────────────────────────── -->
+  <main>
+
+    <!-- LEFT: Input Form -->
+    <div class="card input-card">
+      <div class="card-eyebrow">Soil & Climate Analysis</div>
+      <h1 class="card-title">Find Your Ideal Crop</h1>
+      <p class="card-desc">Enter your soil nutrients and local climate conditions to receive an AI-powered crop recommendation optimized for your land.</p>
+
+      <!-- Soil Nutrients -->
+      <div class="field-group">
+        <div class="field-group-label">Soil Nutrients (mg/kg)</div>
+        <div class="fields-row">
+          <div class="field">
+            <label>Nitrogen <span class="unit">N</span></label>
+            <input type="number" id="N" placeholder="0–200" min="0" max="200" step="1" value="90" />
+          </div>
+          <div class="field">
+            <label>Phosphorus <span class="unit">P</span></label>
+            <input type="number" id="P" placeholder="0–200" min="0" max="200" step="1" value="42" />
+          </div>
+          <div class="field">
+            <label>Potassium <span class="unit">K</span></label>
+            <input type="number" id="K" placeholder="0–250" min="0" max="250" step="1" value="43" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Climate -->
+      <div class="field-group">
+        <div class="field-group-label">Climate Conditions</div>
+        <div class="fields-row-2">
+          <div class="field">
+            <label>Temperature <span class="unit">°C</span></label>
+            <input type="number" id="temperature" placeholder="0–60" min="0" max="60" step="0.1" value="20.8" />
+          </div>
+          <div class="field">
+            <label>Humidity <span class="unit">%</span></label>
+            <input type="number" id="humidity" placeholder="0–100" min="0" max="100" step="0.1" value="82" />
+          </div>
+        </div>
+        <div class="fields-row-2" style="margin-top:0.75rem">
+          <div class="field">
+            <label>pH Level <span class="unit">0–14</span></label>
+            <input type="number" id="ph" placeholder="3.5–9.5" min="0" max="14" step="0.01" value="6.5" />
+          </div>
+          <div class="field">
+            <label>Rainfall <span class="unit">mm</span></label>
+            <input type="number" id="rainfall" placeholder="0–500" min="0" max="500" step="0.1" value="202.9" />
+          </div>
+        </div>
+      </div>
+
+      <div class="error-banner" id="errorBanner"></div>
+
+      <button class="btn-predict" id="predictBtn" onclick="predict()">
+        <span class="spinner" id="spinner"></span>
+        <span id="btnText">Analyse & Recommend</span>
+        <span>→</span>
+      </button>
+    </div>
+
+    <!-- RIGHT: Result Panel -->
+    <div class="card result-card">
+      <div class="result-hero" id="resultHero">
+
+        <!-- Empty state -->
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">🌍</div>
+          <div class="empty-text">Your recommendation will appear here</div>
+        </div>
+
+        <!-- Result -->
+        <div class="result-content" id="resultContent">
+          <div class="result-emoji" id="resultEmoji">🌾</div>
+          <div class="result-crop"  id="resultCrop">Rice</div>
+          <div class="result-label">Recommended Crop</div>
+
+          <div class="confidence-wrap">
+            <svg class="ring-svg" viewBox="0 0 80 80">
+              <circle class="ring-bg"   cx="40" cy="40" r="35"/>
+              <circle class="ring-fill" cx="40" cy="40" r="35" id="ringFill"/>
+              <text class="ring-text" x="40" y="40" id="ringText">–</text>
+            </svg>
+            <div class="confidence-label">
+              <div class="pct" id="confPct">–</div>
+              <div class="lbl">Confidence</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top-3 alternatives -->
+      <div class="top3-strip" id="top3Strip" style="display:none">
+        <div class="top3-title">Top Alternatives</div>
+        <div class="top3-list" id="top3List"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <footer></footer>
+</div>
+
+<script>
+const FEATURES = ["N","P","K","temperature","humidity","ph","rainfall"];
+
+async function predict() {
+  const btn  = document.getElementById('predictBtn');
+  const spin = document.getElementById('spinner');
+  const txt  = document.getElementById('btnText');
+  const err  = document.getElementById('errorBanner');
+
+  // Collect inputs
+  const body = {};
+  let hasErr = false;
+
+  FEATURES.forEach(f => {
+    const el  = document.getElementById(f);
+    const val = parseFloat(el.value);
+    el.classList.remove('error');
+    if (el.value === '' || isNaN(val)) {
+      el.classList.add('error'); hasErr = true;
+    } else {
+      body[f] = val;
+    }
+  });
+
+  if (hasErr) {
+    showError('Please fill in all fields with valid numbers.');
+    return;
+  }
+
+  err.style.display = 'none';
+  btn.disabled = true;
+  spin.style.display = 'block';
+  txt.textContent = 'Analysing…';
+
+  try {
+    const res = await fetch('/predict', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      const msg = data.errors ? data.errors.join('\n') : (data.error || 'Unknown error');
+      showError(msg);
+      return;
+    }
+
+    displayResult(data);
+
+  } catch (e) {
+    showError('Could not connect to the server. Please try again.');
+  } finally {
+    btn.disabled = false;
+    spin.style.display = 'none';
+    txt.textContent = 'Analyse & Recommend';
+  }
+}
+
+function displayResult(data) {
+  // Hide empty state, show result
+  document.getElementById('emptyState').style.display   = 'none';
+  document.getElementById('resultContent').style.display = 'block';
+
+  // Crop name & emoji
+  document.getElementById('resultEmoji').textContent = data.emoji;
+  document.getElementById('resultCrop').textContent  = capitalize(data.predicted_crop);
+
+  // Confidence ring
+  const conf = data.confidence;
+  const pct  = Math.round(conf * 100);
+  const circumference = 2 * Math.PI * 35; // r=35
+  const offset = circumference * (1 - conf);
+
+  document.getElementById('ringFill').style.strokeDasharray  = circumference;
+  document.getElementById('ringFill').style.strokeDashoffset = offset;
+  document.getElementById('ringText').textContent = pct + '%';
+  document.getElementById('confPct').textContent  = pct + '%';
+
+  // Top-3
+  const top3Strip = document.getElementById('top3Strip');
+  const top3List  = document.getElementById('top3List');
+  top3Strip.style.display = 'block';
+  top3List.innerHTML = '';
+
+  data.top_3.forEach((item, i) => {
+    const pctVal = Math.round(item.probability * 100);
+    const div = document.createElement('div');
+    div.className = 'top3-item';
+    div.innerHTML = `
+      <span class="top3-rank">#${i+1}</span>
+      <div style="display:flex;flex-direction:column;gap:3px;flex:1">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="top3-name">${item.emoji} ${capitalize(item.crop)}</span>
+          <span class="top3-pct">${pctVal}%</span>
+        </div>
+        <div class="top3-bar-wrap">
+          <div class="top3-bar rank-${i+1}" data-pct="${pctVal}"></div>
+        </div>
+      </div>
+    `;
+    top3List.appendChild(div);
+  });
+
+  // Animate bars after paint
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      document.querySelectorAll('.top3-bar').forEach(bar => {
+        bar.style.width = bar.dataset.pct + '%';
+      });
+    });
+  });
+}
+
+function showError(msg) {
+  const err = document.getElementById('errorBanner');
+  err.textContent = msg;
+  err.style.display = 'block';
+}
+
+function capitalize(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+// Allow Enter key submission
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') predict();
+});
+</script>
+
+</body>
+</html>
